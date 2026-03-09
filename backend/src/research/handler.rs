@@ -40,9 +40,9 @@ pub async fn create_item(
     Json(payload): Json<CreateResearchItemInput>,
 ) -> Result<impl IntoResponse, AppError> {
     let item = sqlx::query_as::<_, ResearchItem>(
-        "INSERT INTO research_items (title, description, type, owner_id, visibility, file_url, institution_id, group_id)
-         VALUES ($1, $2, $3::research_item_type, $4, $5::research_visibility, $6, $7, $8)
-         RETURNING id, title, description, type, owner_id, version, visibility, file_url, institution_id, group_id, created_at, updated_at",
+        "INSERT INTO research_items (title, description, type, owner_id, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, institution_id, group_id)
+         VALUES ($1, $2, $3::research_item_type, $4, $5::research_visibility, $6, $7, $8, $9, $10, $11, $12)
+         RETURNING id, title, description, type, owner_id, version, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, institution_id, group_id, created_at, updated_at",
     )
     .bind(payload.title)
     .bind(payload.description)
@@ -50,6 +50,10 @@ pub async fn create_item(
     .bind(payload.owner_id)
     .bind(format_visibility(&payload.visibility))
     .bind(payload.file_url)
+    .bind(payload.file_name)
+    .bind(payload.file_size_bytes)
+    .bind(payload.mime_type)
+    .bind(payload.file_checksum)
     .bind(payload.institution_id)
     .bind(payload.group_id)
     .fetch_one(&state.db_pool)
@@ -67,7 +71,7 @@ pub async fn list_items(
     let offset = (page - 1) * limit;
 
     let mut builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(
-        "SELECT id, title, description, type, owner_id, version, visibility, file_url, institution_id, group_id, created_at, updated_at
+        "SELECT id, title, description, type, owner_id, version, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, institution_id, group_id, created_at, updated_at
          FROM research_items",
     );
 
@@ -112,7 +116,7 @@ pub async fn get_item(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let item = sqlx::query_as::<_, ResearchItem>(
-        "SELECT id, title, description, type, owner_id, version, visibility, file_url, institution_id, group_id, created_at, updated_at
+        "SELECT id, title, description, type, owner_id, version, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, institution_id, group_id, created_at, updated_at
          FROM research_items
          WHERE id = $1",
     )
@@ -130,7 +134,7 @@ pub async fn update_item(
     Json(payload): Json<UpdateResearchItemInput>,
 ) -> Result<impl IntoResponse, AppError> {
     let current = sqlx::query_as::<_, ResearchItem>(
-        "SELECT id, title, description, type, owner_id, version, visibility, file_url, institution_id, group_id, created_at, updated_at
+        "SELECT id, title, description, type, owner_id, version, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, institution_id, group_id, created_at, updated_at
          FROM research_items
          WHERE id = $1",
     )
@@ -146,12 +150,16 @@ pub async fn update_item(
              type = $4::research_item_type,
              visibility = $5::research_visibility,
              file_url = $6,
-             institution_id = $7,
-             group_id = $8,
+             file_name = $7,
+             file_size_bytes = $8,
+             mime_type = $9,
+             file_checksum = $10,
+             institution_id = $11,
+             group_id = $12,
              version = version + 1,
              updated_at = NOW()
          WHERE id = $1
-         RETURNING id, title, description, type, owner_id, version, visibility, file_url, institution_id, group_id, created_at, updated_at",
+         RETURNING id, title, description, type, owner_id, version, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, institution_id, group_id, created_at, updated_at",
     )
     .bind(id)
     .bind(payload.title.unwrap_or(current.title))
@@ -159,6 +167,10 @@ pub async fn update_item(
     .bind(format_item_type(&payload.r#type.unwrap_or(current.r#type)))
     .bind(format_visibility(&payload.visibility.unwrap_or(current.visibility)))
     .bind(payload.file_url.or(current.file_url))
+    .bind(payload.file_name.or(current.file_name))
+    .bind(payload.file_size_bytes.or(current.file_size_bytes))
+    .bind(payload.mime_type.or(current.mime_type))
+    .bind(payload.file_checksum.or(current.file_checksum))
     .bind(payload.institution_id.or(current.institution_id))
     .bind(payload.group_id.or(current.group_id))
     .fetch_one(&state.db_pool)
