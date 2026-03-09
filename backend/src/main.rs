@@ -1,4 +1,4 @@
-use axum::{routing::get, Json, Router};
+use axum::{middleware, routing::get, Json, Router};
 use serde::Serialize;
 use std::net::SocketAddr;
 
@@ -7,6 +7,7 @@ mod auth;
 mod config;
 mod db;
 mod error;
+mod middleware;
 mod models;
 mod research;
 
@@ -41,7 +42,13 @@ async fn main() {
         .route("/", get(|| async { "ResearchHub backend" }))
         .route("/api/health", get(health))
         .nest("/api/auth", auth::handler::routes())
-        .nest("/api/research", research::handler::routes())
+        .nest(
+            "/api/research",
+            research::handler::routes().layer(middleware::from_fn_with_state(
+                state.clone(),
+                crate::middleware::auth::require_auth,
+            )),
+        )
         .with_state(state.clone());
     let addr: SocketAddr = format!("{}:{}", state.config.host, state.config.port)
         .parse()
