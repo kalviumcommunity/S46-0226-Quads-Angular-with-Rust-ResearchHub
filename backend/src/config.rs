@@ -56,7 +56,13 @@ impl AppConfig {
             } else {
                 5
             });
-        let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| "change-me-secret".to_string());
+        let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| {
+            if environment == AppEnvironment::Production {
+                panic!("JWT_SECRET is required in production")
+            } else {
+                "change-me-secret".to_string()
+            }
+        });
 
         Self {
             environment,
