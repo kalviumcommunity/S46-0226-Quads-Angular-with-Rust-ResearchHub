@@ -55,9 +55,9 @@ pub async fn create_item(
     }
 
     let item = sqlx::query_as::<_, ResearchItem>(
-        "INSERT INTO research_items (title, description, type, owner_id, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, institution_id, group_id)
-         VALUES ($1, $2, $3::research_item_type, $4, $5::research_visibility, $6, $7, $8, $9, $10, $11, $12)
-         RETURNING id, title, description, type, owner_id, version, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, institution_id, group_id, created_at, updated_at",
+        "INSERT INTO research_items (title, description, type, owner_id, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, doi, citation_authors, citation_year, institution_id, group_id)
+         VALUES ($1, $2, $3::research_item_type, $4, $5::research_visibility, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+         RETURNING id, title, description, type, owner_id, version, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, doi, citation_authors, citation_year, institution_id, group_id, created_at, updated_at",
     )
     .bind(payload.title)
     .bind(payload.description)
@@ -69,6 +69,9 @@ pub async fn create_item(
     .bind(payload.file_size_bytes)
     .bind(payload.mime_type)
     .bind(payload.file_checksum)
+    .bind(payload.doi)
+    .bind(payload.citation_authors.unwrap_or_default())
+    .bind(payload.citation_year)
     .bind(payload.institution_id)
     .bind(payload.group_id)
     .fetch_one(&state.db_pool)
@@ -87,7 +90,7 @@ pub async fn list_items(
     let offset = (page - 1) * limit;
 
     let mut builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(
-        "SELECT id, title, description, type, owner_id, version, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, institution_id, group_id, created_at, updated_at
+        "SELECT id, title, description, type, owner_id, version, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, doi, citation_authors, citation_year, institution_id, group_id, created_at, updated_at
          FROM research_items",
     );
 
@@ -155,7 +158,7 @@ pub async fn get_item(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let item = sqlx::query_as::<_, ResearchItem>(
-        "SELECT id, title, description, type, owner_id, version, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, institution_id, group_id, created_at, updated_at
+        "SELECT id, title, description, type, owner_id, version, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, doi, citation_authors, citation_year, institution_id, group_id, created_at, updated_at
          FROM research_items
          WHERE id = $1",
     )
@@ -178,7 +181,7 @@ pub async fn update_item(
     Json(payload): Json<UpdateResearchItemInput>,
 ) -> Result<impl IntoResponse, AppError> {
     let current = sqlx::query_as::<_, ResearchItem>(
-        "SELECT id, title, description, type, owner_id, version, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, institution_id, group_id, created_at, updated_at
+        "SELECT id, title, description, type, owner_id, version, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, doi, citation_authors, citation_year, institution_id, group_id, created_at, updated_at
          FROM research_items
          WHERE id = $1",
     )
@@ -202,12 +205,15 @@ pub async fn update_item(
              file_size_bytes = $8,
              mime_type = $9,
              file_checksum = $10,
-             institution_id = $11,
-             group_id = $12,
+             doi = $11,
+             citation_authors = $12,
+             citation_year = $13,
+             institution_id = $14,
+             group_id = $15,
              version = version + 1,
              updated_at = NOW()
          WHERE id = $1
-         RETURNING id, title, description, type, owner_id, version, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, institution_id, group_id, created_at, updated_at",
+         RETURNING id, title, description, type, owner_id, version, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, doi, citation_authors, citation_year, institution_id, group_id, created_at, updated_at",
     )
     .bind(id)
     .bind(payload.title.unwrap_or(current.title))
@@ -219,6 +225,9 @@ pub async fn update_item(
     .bind(payload.file_size_bytes.or(current.file_size_bytes))
     .bind(payload.mime_type.or(current.mime_type))
     .bind(payload.file_checksum.or(current.file_checksum))
+    .bind(payload.doi.or(current.doi))
+    .bind(payload.citation_authors.unwrap_or(current.citation_authors))
+    .bind(payload.citation_year.or(current.citation_year))
     .bind(payload.institution_id.or(current.institution_id))
     .bind(payload.group_id.or(current.group_id))
     .fetch_one(&state.db_pool)
@@ -233,7 +242,7 @@ pub async fn delete_item(
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let current = sqlx::query_as::<_, ResearchItem>(
-        "SELECT id, title, description, type, owner_id, version, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, institution_id, group_id, created_at, updated_at
+        "SELECT id, title, description, type, owner_id, version, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, doi, citation_authors, citation_year, institution_id, group_id, created_at, updated_at
          FROM research_items
          WHERE id = $1",
     )

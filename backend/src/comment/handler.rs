@@ -96,7 +96,7 @@ async fn ensure_can_access_item(
     research_item_id: Uuid,
 ) -> Result<(), AppError> {
     let item = sqlx::query_as::<_, ResearchItem>(
-        "SELECT id, title, description, type, owner_id, version, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, institution_id, group_id, created_at, updated_at
+        "SELECT id, title, description, type, owner_id, version, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, doi, citation_authors, citation_year, institution_id, group_id, created_at, updated_at
          FROM research_items
          WHERE id = $1",
     )
