@@ -3,8 +3,11 @@ use serde::Serialize;
 use std::net::SocketAddr;
 
 mod app_state;
+mod auth;
 mod config;
 mod db;
+mod error;
+mod models;
 
 use app_state::AppState;
 use config::AppConfig;
@@ -36,6 +39,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(|| async { "ResearchHub backend" }))
         .route("/api/health", get(health))
+        .nest("/api/auth", auth::handler::routes())
         .with_state(state.clone());
     let addr: SocketAddr = format!("{}:{}", state.config.host, state.config.port)
         .parse()

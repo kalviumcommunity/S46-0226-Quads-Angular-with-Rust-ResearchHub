@@ -14,3 +14,5 @@ sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid"
 dotenvy = "0.15"
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+jsonwebtoken = "9"
