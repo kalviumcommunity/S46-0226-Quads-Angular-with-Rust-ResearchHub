@@ -1,10 +1,16 @@
 use crate::{
     app_state::AppState,
     error::AppError,
-    models::research::{CreateResearchItemInput, ResearchItem, UpdateResearchItemInput},
+    middleware::auth::AuthenticatedUser,
+    models::{
+        research::{
+            CreateResearchItemInput, ResearchItem, ResearchVisibility, UpdateResearchItemInput,
+        },
+        user::Role,
+    },
 };
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{delete, get, post, put},
@@ -37,8 +43,17 @@ pub fn routes() -> Router<AppState> {
 
 pub async fn create_item(
     State(state): State<AppState>,
+    Extension(current_user): Extension<AuthenticatedUser>,
     Json(payload): Json<CreateResearchItemInput>,
 ) -> Result<impl IntoResponse, AppError> {
+    if current_user.role != Role::Admin && payload.owner_id != current_user.id {
+        return Err(AppError::Forbidden);
+    }
+
+    if current_user.role == Role::Student && payload.visibility == ResearchVisibility::Public {
+        return Err(AppError::Forbidden);
+    }
+
     let item = sqlx::query_as::<_, ResearchItem>(
         "INSERT INTO research_items (title, description, type, owner_id, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, institution_id, group_id)
          VALUES ($1, $2, $3::research_item_type, $4, $5::research_visibility, $6, $7, $8, $9, $10, $11, $12)
@@ -64,6 +79,7 @@ pub async fn create_item(
 
 pub async fn list_items(
     State(state): State<AppState>,
+    Extension(current_user): Extension<AuthenticatedUser>,
     Query(query): Query<ListResearchQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let page = query.page.unwrap_or(1).max(1);
@@ -96,6 +112,28 @@ pub async fn list_items(
         builder.push("visibility = ");
         builder.push_bind(visibility);
         builder.push("::research_visibility");
+        has_where = true;
+    }
+
+    if current_user.role != Role::Admin {
+        builder.push(if has_where { " AND (" } else { " WHERE (" });
+        builder.push("owner_id = ");
+        builder.push_bind(current_user.id);
+        builder.push(" OR visibility = 'public'::research_visibility");
+
+        if let Some(institution_id) = current_user.institution_id {
+            builder.push(" OR (visibility = 'institution'::research_visibility AND institution_id = ");
+            builder.push_bind(institution_id);
+            builder.push(")");
+        }
+
+        if let Some(group_id) = current_user.group_id {
+            builder.push(" OR (visibility = 'group'::research_visibility AND group_id = ");
+            builder.push_bind(group_id);
+            builder.push(")");
+        }
+
+        builder.push(")");
     }
 
     builder.push(" ORDER BY created_at DESC LIMIT ");
@@ -113,6 +151,7 @@ pub async fn list_items(
 
 pub async fn get_item(
     State(state): State<AppState>,
+    Extension(current_user): Extension<AuthenticatedUser>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let item = sqlx::query_as::<_, ResearchItem>(
@@ -125,11 +164,16 @@ pub async fn get_item(
     .await?
     .ok_or(AppError::NotFound)?;
 
+    if !can_view_item(&current_user, &item) {
+        return Err(AppError::Forbidden);
+    }
+
     Ok(Json(item))
 }
 
 pub async fn update_item(
     State(state): State<AppState>,
+    Extension(current_user): Extension<AuthenticatedUser>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateResearchItemInput>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -142,6 +186,10 @@ pub async fn update_item(
     .fetch_optional(&state.db_pool)
     .await?
     .ok_or(AppError::NotFound)?;
+
+    if !can_manage_item(&current_user, &current) {
+        return Err(AppError::Forbidden);
+    }
 
     let updated = sqlx::query_as::<_, ResearchItem>(
         "UPDATE research_items
@@ -181,8 +229,23 @@ pub async fn update_item(
 
 pub async fn delete_item(
     State(state): State<AppState>,
+    Extension(current_user): Extension<AuthenticatedUser>,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
+    let current = sqlx::query_as::<_, ResearchItem>(
+        "SELECT id, title, description, type, owner_id, version, visibility, file_url, file_name, file_size_bytes, mime_type, file_checksum, institution_id, group_id, created_at, updated_at
+         FROM research_items
+         WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&state.db_pool)
+    .await?
+    .ok_or(AppError::NotFound)?;
+
+    if !can_manage_item(&current_user, &current) {
+        return Err(AppError::Forbidden);
+    }
+
     let result = sqlx::query("DELETE FROM research_items WHERE id = $1")
         .bind(id)
         .execute(&state.db_pool)
@@ -210,4 +273,28 @@ fn format_visibility(value: &crate::models::research::ResearchVisibility) -> Str
         crate::models::research::ResearchVisibility::Institution => "institution".to_string(),
         crate::models::research::ResearchVisibility::Public => "public".to_string(),
     }
+}
+
+fn can_view_item(user: &AuthenticatedUser, item: &ResearchItem) -> bool {
+    if user.role == Role::Admin || item.owner_id == user.id {
+        return true;
+    }
+
+    match item.visibility {
+        ResearchVisibility::Public => true,
+        ResearchVisibility::Institution => item.institution_id == user.institution_id,
+        ResearchVisibility::Group => item.group_id == user.group_id,
+        ResearchVisibility::Private => false,
+    }
+}
+
+fn can_manage_item(user: &AuthenticatedUser, item: &ResearchItem) -> bool {
+    if user.role == Role::Admin || item.owner_id == user.id {
+        return true;
+    }
+
+    user.role == Role::Faculty
+        && item.visibility != ResearchVisibility::Private
+        && item.institution_id.is_some()
+        && item.institution_id == user.institution_id
 }
