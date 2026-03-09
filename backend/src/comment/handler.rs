@@ -109,7 +109,7 @@ async fn ensure_can_access_item(
         return Ok(());
     }
 
-    let allowed = match item.visibility {
+    let allowed = match &item.visibility {
         crate::models::research::ResearchVisibility::Public => true,
         crate::models::research::ResearchVisibility::Institution => {
             item.institution_id == user.institution_id

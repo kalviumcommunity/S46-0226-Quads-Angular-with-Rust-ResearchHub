@@ -289,7 +289,7 @@ fn can_view_item(user: &AuthenticatedUser, item: &ResearchItem) -> bool {
         return true;
     }
 
-    match item.visibility {
+    match &item.visibility {
         ResearchVisibility::Public => true,
         ResearchVisibility::Institution => item.institution_id == user.institution_id,
         ResearchVisibility::Group => item.group_id == user.group_id,
