@@ -4,13 +4,30 @@ use crate::{
     models::research::{CreateResearchItemInput, ResearchItem, UpdateResearchItemInput},
 };
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{delete, get, post, put},
     Json, Router,
 };
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+#[derive(Debug, Deserialize)]
+pub struct ListResearchQuery {
+    pub page: Option<u32>,
+    pub limit: Option<u32>,
+    pub owner_id: Option<Uuid>,
+    pub r#type: Option<String>,
+    pub visibility: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ListResearchResponse {
+    pub page: u32,
+    pub limit: u32,
+    pub items: Vec<ResearchItem>,
+}
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -41,16 +58,53 @@ pub async fn create_item(
     Ok((StatusCode::CREATED, Json(item)))
 }
 
-pub async fn list_items(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
-    let items = sqlx::query_as::<_, ResearchItem>(
-        "SELECT id, title, description, type, owner_id, version, visibility, file_url, institution_id, group_id, created_at, updated_at
-         FROM research_items
-         ORDER BY created_at DESC",
-    )
-    .fetch_all(&state.db_pool)
-    .await?;
+pub async fn list_items(
+    State(state): State<AppState>,
+    Query(query): Query<ListResearchQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let page = query.page.unwrap_or(1).max(1);
+    let limit = query.limit.unwrap_or(20).clamp(1, 100);
+    let offset = (page - 1) * limit;
 
-    Ok(Json(items))
+    let mut builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(
+        "SELECT id, title, description, type, owner_id, version, visibility, file_url, institution_id, group_id, created_at, updated_at
+         FROM research_items",
+    );
+
+    let mut has_where = false;
+    if let Some(owner_id) = query.owner_id {
+        builder.push(if has_where { " AND " } else { " WHERE " });
+        builder.push("owner_id = ");
+        builder.push_bind(owner_id);
+        has_where = true;
+    }
+
+    if let Some(item_type) = query.r#type {
+        builder.push(if has_where { " AND " } else { " WHERE " });
+        builder.push("type = ");
+        builder.push_bind(item_type);
+        builder.push("::research_item_type");
+        has_where = true;
+    }
+
+    if let Some(visibility) = query.visibility {
+        builder.push(if has_where { " AND " } else { " WHERE " });
+        builder.push("visibility = ");
+        builder.push_bind(visibility);
+        builder.push("::research_visibility");
+    }
+
+    builder.push(" ORDER BY created_at DESC LIMIT ");
+    builder.push_bind(limit as i64);
+    builder.push(" OFFSET ");
+    builder.push_bind(offset as i64);
+
+    let items = builder
+        .build_query_as::<ResearchItem>()
+        .fetch_all(&state.db_pool)
+        .await?;
+
+    Ok(Json(ListResearchResponse { page, limit, items }))
 }
 
 pub async fn get_item(
