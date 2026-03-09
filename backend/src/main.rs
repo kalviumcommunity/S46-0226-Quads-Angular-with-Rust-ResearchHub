@@ -12,6 +12,7 @@ mod error;
 mod middleware;
 mod models;
 mod research;
+mod search;
 
 use app_state::AppState;
 use config::AppConfig;
@@ -61,6 +62,13 @@ async fn main() {
         .nest(
             "/api/dashboard",
             dashboard::handler::routes().layer(middleware::from_fn_with_state(
+                state.clone(),
+                crate::middleware::auth::require_auth,
+            )),
+        )
+        .nest(
+            "/api/search",
+            search::handler::routes().layer(middleware::from_fn_with_state(
                 state.clone(),
                 crate::middleware::auth::require_auth,
             )),
