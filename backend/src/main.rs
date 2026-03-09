@@ -6,6 +6,7 @@ mod app_state;
 mod auth;
 mod comment;
 mod config;
+mod dashboard;
 mod db;
 mod error;
 mod middleware;
@@ -53,6 +54,13 @@ async fn main() {
         .nest(
             "/api/comments",
             comment::handler::routes().layer(middleware::from_fn_with_state(
+                state.clone(),
+                crate::middleware::auth::require_auth,
+            )),
+        )
+        .nest(
+            "/api/dashboard",
+            dashboard::handler::routes().layer(middleware::from_fn_with_state(
                 state.clone(),
                 crate::middleware::auth::require_auth,
             )),
