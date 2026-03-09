@@ -15,6 +15,7 @@ mod research;
 mod search;
 
 use app_state::AppState;
+use config::AppEnvironment;
 use config::AppConfig;
 
 #[derive(Serialize)]
@@ -33,10 +34,20 @@ async fn health() -> Json<HealthResponse> {
 #[tokio::main]
 async fn main() {
     dotenvy::dotenv().ok();
-    tracing_subscriber::fmt::init();
-
     let config = AppConfig::from_env();
-    let db_pool = db::connect(&config.database_url)
+    let default_log = if config.environment == AppEnvironment::Production {
+        "info"
+    } else {
+        "debug"
+    };
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(default_log)),
+        )
+        .init();
+
+    let db_pool = db::connect(&config)
         .await
         .expect("failed to connect to postgres");
 
