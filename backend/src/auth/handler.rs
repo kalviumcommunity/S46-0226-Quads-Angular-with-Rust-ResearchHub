@@ -1,6 +1,7 @@
 use crate::{
     app_state::AppState,
     auth::jwt,
+    auth::password::{hash_password, verify_password},
     error::AppError,
     models::user::{RegisterUserInput, Role, User},
 };
@@ -47,6 +48,7 @@ pub async fn register(
     Json(payload): Json<RegisterUserInput>,
 ) -> Result<impl IntoResponse, AppError> {
     let role = payload.role.unwrap_or(Role::Student);
+    let password_hash = hash_password(&payload.password)?;
 
     let user = sqlx::query_as::<_, User>(
         "INSERT INTO users (email, full_name, password_hash, role, institution_id, group_id)
@@ -55,7 +57,7 @@ pub async fn register(
     )
     .bind(payload.email)
     .bind(payload.full_name)
-    .bind(payload.password)
+    .bind(password_hash)
     .bind(format_role(&role))
     .bind(payload.institution_id)
     .bind(payload.group_id)
@@ -86,7 +88,7 @@ pub async fn login(
     .await?
     .ok_or(AppError::Unauthorized)?;
 
-    if user.password_hash != payload.password {
+    if !verify_password(&payload.password, &user.password_hash)? {
         return Err(AppError::Unauthorized);
     }
 
