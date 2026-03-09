@@ -8,6 +8,7 @@ mod config;
 mod db;
 mod error;
 mod models;
+mod research;
 
 use app_state::AppState;
 use config::AppConfig;
@@ -40,6 +41,7 @@ async fn main() {
         .route("/", get(|| async { "ResearchHub backend" }))
         .route("/api/health", get(health))
         .nest("/api/auth", auth::handler::routes())
+        .nest("/api/research", research::handler::routes())
         .with_state(state.clone());
     let addr: SocketAddr = format!("{}:{}", state.config.host, state.config.port)
         .parse()
